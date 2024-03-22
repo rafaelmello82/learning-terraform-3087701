@@ -45,31 +45,77 @@ resource "aws_instance" "blog" {
 }
 
 module "alb" {
-  source  = "terraform-aws-modules/alb/aws"
+  source = "terraform-aws-modules/alb/aws"
 
-  name               = "blog-alb"
-  load_balancer_type = "application"
-  vpc_id             = module.blog_vpc.vpc_id
-  subnets            = module.blog_vpc.public_subnets
-  security_groups    = [module.blog_vpc.security_group_id]
+  name    = "blog-alb"
+  vpc_id  = module.blog_vpc.vpc_id
+  subnets = module.blog_vpc.public_subnets
 
-  http_tcp_listeners = [
-    {
-      port               = 80
-      protocol           = "HTTP"
-      target_group_index = 0
+  security_group_ingress_rules = {
+    all_http = {
+      from_port   = 80
+      to_port     = 80
+      ip_protocol = "tcp"
+      description = "HTTP web traffic"
+      cidr_ipv4   = "0.0.0.0/0"
     },
-  ]
+    all_https = {
+      from_port   = 443
+      to_port     = 443
+      ip_protocol = "tcp"
+      description = "HTTPS web traffic"
+      cidr_ipv4   = "0.0.0.0/0"
+    }
+  }
+  security_group_egress_rules = {
+    all = {
+      ip_protocol = "-1"
+      cidr_ipv4   = "0.0.0.0/0"  
+    }
+  }
 
-  target_groups = [
-    {
+  access_logs = {
+    bucket = "blog-alb-logs"
+  }
+
+  listeners = {
+    http_to_https_redirect = {
+      port     = 80
+      protocol = "HTTP"
+      redirect = {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    },
+    https_listener = {
+      port            = 443
+      protocol        = "HTTPS"
+      certificate_arn = aws_instance.blog.arn
+
+      default_action = {
+        type               = "forward"
+        target_group_index = 0
+      }
+    }
+  }
+
+  # Configuração do Grupo de Destino
+  target_groups = {
+    blog_instance = {
       name_prefix      = "blog-"
-      backend_protocol = "HTTP"
-      backend_port     = 80
+      protocol         = "HTTP"
+      port             = 80
       target_type      = "instance"
-    },
-  ]
+    }
+  }
+
+  tags = {
+    Environment = "Development"
+    Project     = "Blog"
+  }
 }
+
 
 
 module "blog_sg" {
